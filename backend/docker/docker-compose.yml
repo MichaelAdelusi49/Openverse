@@ -1,0 +1,79 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:80"
+    volumes:
+      - ./backend:/var/www/html
+      - ./frontend:/var/www/html/public/frontend
+    environment:
+      - DB_HOST=db
+      - DB_NAME=openverse
+      - DB_USER=root
+      - DB_PASSWORD=secret
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: openverse
+      MYSQL_ROOT_HOST: "%"
+    command: 
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "db", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: db
+      UPLOAD_LIMIT: 128M
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      - app
+      - db
+    command: sh -c "composer install && ./vendor/bin/phpunit"
+    environment:
+      - DB_HOST=db
+      - DB_NAME=openverse_test
+      - DB_USER=root
+      - DB_PASSWORD=secret
+    networks:
+      - app-network
+
+volumes:
+  db_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
